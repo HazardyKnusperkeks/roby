@@ -55,6 +55,10 @@ module Roby
             #
             # @see add_tasks_info remove_tasks
             attr_accessor :all_job_info
+            # Scheduler information
+            # 
+            # @return [Schedulers::State]
+            attr_accessor :scheduler_state
             # The task layout as computed in the last call to #paintEvent
             attr_reader :task_layout
             # The set of tasks that should currently be managed by the view.
@@ -166,6 +170,7 @@ module Roby
                 @start_line = 0
                 @all_tasks = Set.new
                 @all_job_info = Hash.new
+                @scheduler_state = Schedulers::State.new
                 @current_tasks = Array.new
                 @task_layout = Array.new
                 @sort_mode = :start_time
@@ -263,8 +268,16 @@ module Roby
             def clear_tasks_info
                 all_tasks.clear
                 all_job_info.clear
+                @scheduler_state = Schedulers::State.new
             end
 
+            # Add information to the chronicle for the next display update
+            #
+            # @param [Array<Roby::Task>] tasks the set of tasks to display
+            # @param [Hash<Roby::Task,Roby::Task>] mapping from a placeholder
+            #   task and the job task it represents
+            # @param [Roby::Schedulers::State] scheduler information to be displayed
+            #   on the chronicle
             def add_tasks_info(tasks, job_info)
                 tasks.each do |t|
                     if base_time && t.addition_time < base_time
@@ -545,7 +558,11 @@ module Roby
                 return events, line_height
             end
 
-            TaskLayout = Struct.new :task, :top_y, :height, :state, :add_point, :start_point, :end_point, :events
+            TaskLayout = Struct.new :task, :top_y, :events_height, :message_height,
+                :state, :add_point, :start_point,
+                :end_point, :events, :messages do
+                    def height; events_height + message_height end
+                end
 
             def lay_out_tasks_and_events(fm, max_height: nil)
                 current_tasks = self.current_tasks
@@ -568,13 +585,14 @@ module Roby
                     top_y = bottom_y + task_separation + text_height
                     break if max_height && top_y > max_height
 
-                    if task.history.empty?
+                    last_event = task.last_event
+                    if !last_event
                         state = :pending
                         end_time = task.finalization_time
                     else
-                        state = task.current_display_state(task.history.last.time)
+                        state = task.current_display_state(last_event.time)
                         if state != :running
-                            end_time = task.history.last.time
+                            end_time = last_event.time
                         end
                     end
                     add_point = time_to_pixel * (task.addition_time - display_time) + display_point
@@ -584,10 +602,23 @@ module Roby
                     if end_time
                         end_point = time_to_pixel * (end_time - display_time) + display_point
                     end
-                    events, height = lay_out_events(fm, task, display_start_time, display_end_time)
+                    events, events_height = lay_out_events(fm, task, display_start_time, display_end_time)
 
-                    bottom_y = top_y + height
-                    layout << TaskLayout.new(task, top_y, height, state, add_point, start_point, end_point, events)
+                    messages = Array.new
+                    pending = scheduler_state.pending_non_executable_tasks.
+                        find_all { |_, *args| args.include?(task) }
+                    pending.each do |msg, *args|
+                        messages << Schedulers::State.format_message_into_string(msg, *args)
+                    end
+                    holdoffs = scheduler_state.non_scheduled_tasks.fetch(task, Set.new)
+                    holdoffs.each do |msg, *args|
+                        messages << Schedulers::State.format_message_into_string(msg, *args)
+                    end
+                    messages_height = text_height * messages.size
+
+                    bottom_y = top_y + events_height + messages_height
+                    layout << TaskLayout.new(task, top_y, events_height, messages_height, state, add_point,
+                                             start_point, end_point, events, messages)
                 end
                 layout
             end
@@ -610,24 +641,24 @@ module Roby
                 layout.each do |task_layout|
                     add_point, start_point, end_point =
                         task_layout.add_point, task_layout.start_point, task_layout.end_point
-                    top_y       = task_layout.top_y
-                    line_height = task_layout.height
-                    state       = task_layout.state
-                    task        = task_layout.task
+                    top_y         = task_layout.top_y
+                    events_height = task_layout.events_height
+                    state         = task_layout.state
+                    task          = task_layout.task
 
                     # Paint the pending stage, i.e. before the task started
                     painter.brush = Qt::Brush.new(TASK_BRUSH_COLORS[:pending])
                     painter.pen   = Qt::Pen.new(TASK_PEN_COLORS[:pending])
                     painter.drawRect(
                         add_point, top_y,
-                        (start_point || end_point || current_point) - add_point, line_height)
+                        (start_point || end_point || current_point) - add_point, events_height)
 
                     if start_point
                         painter.brush = Qt::Brush.new(TASK_BRUSH_COLORS[:running])
                         painter.pen   = Qt::Pen.new(TASK_PEN_COLORS[:running])
                         painter.drawRect(
                             start_point, top_y,
-                            (end_point || current_point) - start_point, line_height)
+                            (end_point || current_point) - start_point, events_height)
 
                         if state && state != :running
                             # Final state is shown by "eating" a few pixels at the task
@@ -641,13 +672,20 @@ module Roby
                     painter.pen = Qt::Pen.new(TASK_NAME_COLOR)
                     painter.drawText(Qt::Point.new(0, top_y - fm.descent), task_timeline_title(task))
 
-                    # And finally display the emitted events
+                    # Display the emitted events
                     task_layout.events.each do |x, y, text|
                         painter.brush, painter.pen = EVENT_STYLES[EVENT_CONTROLABLE | EVENT_EMITTED]
                         painter.drawEllipse(Qt::Point.new(x, top_y + y),
                                             EVENT_CIRCLE_RADIUS, EVENT_CIRCLE_RADIUS)
                         painter.pen = Qt::Pen.new(EVENT_NAME_COLOR)
                         painter.drawText(Qt::Point.new(x + 2 * EVENT_CIRCLE_RADIUS, top_y + y), text)
+                    end
+
+                    # And finally display associated messages
+                    painter.pen = Qt::Pen.new(TASK_MESSAGE_COLOR)
+                    task_layout.messages.each_with_index do |msg, i|
+                        y = top_y + task_layout.events_height + fm.height * (i + 1) - fm.descent
+                        painter.drawText(Qt::Point.new(TASK_MESSAGE_MARGIN, y), msg)
                     end
                 end
             end

@@ -5,7 +5,21 @@ module Roby
     module Interface
         module Async
             # Asynchronous access to the log stream
+            #
+            # Roby logs are purely incremental information, which means that on
+            # connection one must process the whole existing log before being
+            # able to provide the current state. From a user perspective, this
+            # init phase is really overhead, so it's better to avoid updating
+            # the UI while the data is being processed. For this reason, the
+            # class provides {#on_init_progress} and {#on_init_done} to provide
+            # progress information to the user, and start normal processing when
+            # init is finished.
+            #
+            # It must be integrated into your application's event loop by
+            # calling {#poll}.
             class Log
+                extend Logger::Hierarchy
+
                 # The plan rebuilder object, which processes the log stream to
                 # rebuild {#plan}
                 #
@@ -17,8 +31,15 @@ module Roby
                 # @return [Roby::Plan]
                 def plan; plan_rebuilder.plan end
 
+                # Information about the scheduler state
+                #
+                # @return [Schedulers::State]
+                def scheduler_state; plan.consolidated_scheduler_state end
+
                 include Hooks
                 include Hooks::InstanceHooks
+
+                # @!group Hooks
 
                 # @!method on_reachable()
                 #   Hooks called when we successfully connected
@@ -29,18 +50,10 @@ module Roby
                 #   @return [void]
                 define_hooks :on_unreachable
                 # @!method on_init_progress
-                #   Hooks called during the initialization phase to inform about
-                #   its progress
-                #
-                #   @yieldparam [Integer] received the number of bytes received
-                #   @yieldparam [Integer] expected the number of bytes expected
-                #   @return [void]
+                #   (see Roby::Log::Client#on_init_progress)
                 define_hooks :on_init_progress
                 # @!method on_init_done
-                #   Hooks called when the initial log data has been fully
-                #   processed
-                #
-                #   @return [void]
+                #   (see Roby::Log::Client#on_init_done)
                 define_hooks :on_init_done
                 # @!method on_update
                 #   Hooks called when the plan rebuilder processed an update
@@ -49,6 +62,8 @@ module Roby
                 #   @yieldparam [Time] cycle_time
                 #   @return [void]
                 define_hooks :on_update
+
+                # @!endgroup
 
                 attr_reader :host
                 attr_reader :port
@@ -118,15 +133,15 @@ module Roby
                     raise
 
                 rescue ComError
-                    Interface.info "link closed, trying to reconnect"
+                    Log.info "link closed, trying to reconnect"
                     unreachable!
                     if !closed?
                         attempt_connection
                     end
                     false
                 rescue Exception => e
-                    Interface.warn "error while polling connection, trying to reconnect"
-                    Roby.log_exception_with_backtrace(e, Interface, :warn)
+                    Log.warn "error while polling connection, trying to reconnect"
+                    Roby.log_exception_with_backtrace(e, Log, :warn)
                     unreachable!
                     if !closed?
                         attempt_connection
@@ -201,9 +216,10 @@ module Roby
                                 run_hook :on_init_done
                             end
                             client.on_data do |data|
-                                plan_rebuilder.push_data(data)
+                                plan_rebuilder.process(data)
                                 cycle = plan_rebuilder.cycle_index
                                 time  = plan_rebuilder.cycle_start_time
+                                Roby::Log.debug "Async update(#{cycle}, #{time})"
                                 run_hook :on_update, cycle, time
                             end
                         else

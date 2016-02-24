@@ -105,6 +105,13 @@ module Roby
             self
         end
 
+        # Tests whether a task is in the quarantine
+        #
+        # @see #quarantine
+        def quarantined_task?(task)
+            gc_quarantine.include?(task)
+        end
+
 	# The set of transactions which are built on top of this plan
 	attr_reader :transactions
 
@@ -721,9 +728,6 @@ module Roby
             end
 
             add_task_set([task])
-            for ev in task.bound_events.values
-                task_events << ev
-            end
         end
 
         # Add a free event to the plan
@@ -762,7 +766,6 @@ module Roby
                     events ||= ValueSet.new
                     for t in new_tasks
                         for ev in t.bound_events.values
-                            task_events << ev
                             events << ev
                         end
                     end
@@ -865,6 +868,9 @@ module Roby
 
 	    for t in tasks
 		t.instantiate_model_event_relations
+                for ev in t.bound_events.values
+                    task_events << ev
+                end
 	    end
 	    nil
 	end
@@ -1158,7 +1164,12 @@ module Roby
 	# Returns true if there is no task in this plan
 	def empty?; @known_tasks.empty? end
 	# Iterates on all tasks
-	def each_task; @known_tasks.each { |t| yield(t) } end
+        #
+        # @yieldparam [Task] task
+	def each_task
+            return enum_for(__method__) if !block_given?
+            @known_tasks.each { |t| yield(t) }
+        end
  
 	# Returns +object+ if object is a plan object from this plan, or if
 	# it has no plan yet (in which case it is added to the plan first).

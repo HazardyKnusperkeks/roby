@@ -106,6 +106,13 @@ module Roby
                     name = method_name.to_s
                     description, @current_description = @current_description, nil
 
+                    if existing = find_action_by_name(name)
+                        if description.returned_type == Roby::Task
+                            description.returns(existing.returned_type)
+                        end
+                        description.overloads(existing)
+                    end
+
                     expected_argument_count =
                         if description.arguments.empty? then 0
                         else 1
@@ -147,7 +154,7 @@ module Roby
                 result
             end
 
-            # Helper method for {action_state_machine} and {action_script}
+            # Helper method for {#action_state_machine} and {#action_script}
             def action_coordination(name, model, &block)
                 if !@current_description
                     raise ArgumentError, "you must describe the action with #describe before calling #action_coordination"
@@ -208,7 +215,7 @@ module Roby
                 action_coordination(name, Coordination::ActionStateMachine, &block)
             end
 
-            # @deprecated use {action_state_machine} instead
+            # @deprecated use {#action_state_machine} instead
             def state_machine(name, &block)
                 action_state_machine(name, &block)
             end

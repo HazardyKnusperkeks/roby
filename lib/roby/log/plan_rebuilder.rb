@@ -68,6 +68,8 @@ module Roby
             #
             # It removes duplicates, and removes "non-scheduled" reports for
             # tasks that have in fine been scheduled
+            #
+            # @return [Schedulers::State]
             def consolidated_scheduler_state
                 state = Schedulers::State.new
                 scheduler_states.each do |s|
@@ -346,7 +348,9 @@ module Roby
             #
             # @return [Time]
             def cycle_start_time
-                Time.at(*stats[:start]) + stats[:real_start]
+                if stats[:start] && stats[:real_start]
+                    Time.at(*stats[:start]) + stats[:real_start]
+                end
             end
 
             # The time of the last processed log item
@@ -368,19 +372,21 @@ module Roby
                 has_structure_updates? || has_event_propagation_updates?
             end
 
-            # Push one cycle worth of data
+            # Process one cycle worth of data, and pushes it into history if
+            # needed
+            #
+            # @see process
             def push_data(data)
                 process(data)
-                if has_interesting_events? || @last_cycle_snapshotted
+                interesting = has_interesting_events?
+                if interesting || @last_cycle_snapshotted
                     relations = if !has_structure_updates? && !history.empty?
                                     history.last.relations
                                 end
                     history << snapshot(relations)
                     result = true
                 end
-                @last_cycle_snapshotted = has_interesting_events?
-
-                clear_integrated
+                @last_cycle_snapshotted = interesting
                 result
             end
 

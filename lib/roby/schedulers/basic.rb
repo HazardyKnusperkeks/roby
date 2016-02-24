@@ -18,9 +18,6 @@ module Roby
     # whatever event is reasonable to call with respect to the system's
     # state (i.e. execution situation).
     module Schedulers
-        extend Logger::Hierarchy
-        extend Logger::Forward
-
         # The basic schedulers uses the Roby's "core" plan model to decide which
         # tasks can be started.
         #
@@ -129,7 +126,7 @@ module Roby
                 not_executable.each do |task|
                     # Try to figure out why ...
                     if task.execution_agent && !task.execution_agent.ready?
-                        report_pending_non_executable_task("execution agent %2 not ready", task, task.execution_agent)
+                        report_pending_non_executable_task("execution agent not ready (%2)", task, task.execution_agent)
                     elsif task.partially_instanciated?
                         report_pending_non_executable_task("partially instanciated", task)
                     else
