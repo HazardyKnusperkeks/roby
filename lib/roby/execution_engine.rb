@@ -1993,7 +1993,14 @@ module Roby
 	    end
 		
 	ensure
-		event_loop_ensure(already_disabled_gc)
+		GC.enable if !already_disabled_gc
+		
+	    if !plan.known_tasks.empty?
+			ExecutionEngine.warn "the following tasks are still present in the plan:"
+			plan.known_tasks.each do |t|
+				ExecutionEngine.warn "  #{t}"
+			end
+		end
 	end
 	
 	def event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
@@ -2080,17 +2087,6 @@ module Roby
 				ExecutionEngine.fatal "Execution thread FORCEFULLY quitting because of unhandled exception"
 				Roby.display_exception(ExecutionEngine.logger.io(:fatal), e)
 				raise
-			end
-		end
-	end
-	
-	def event_loop_ensure(already_disabled_gc)
-		GC.enable if !already_disabled_gc
-		
-		if !plan.known_tasks.empty?
-			ExecutionEngine.warn "the following tasks are still present in the plan:"
-			plan.known_tasks.each do |t|
-				ExecutionEngine.warn "  #{t}"
 			end
 		end
 	end
