@@ -1989,93 +1989,9 @@ module Roby
 			already_disabled_gc = GC.disable
 		end
 		loop do
-			begin
-				if quitting?
-					thread.priority = 0
-					begin
-						return if forced_exit? || !clear
-					rescue Exception => e
-						ExecutionEngine.warn "Execution thread failed to clean up"
-						Roby.format_exception(e).each do |line|
-							ExecutionEngine.warn line
-						end
-						return
-					end
-				end
-				
-				while Time.now > cycle_start + cycle_length
-					@cycle_start += cycle_length
-					@cycle_index += 1
-				end
-				stats[:start] = cycle_start
-				stats[:cycle_index] = cycle_index
-				
-				Roby.synchronize do
-					process_events(stats) 
-				end
-				
-				@remaining_cycle_time = cycle_length - stats[:end]
-				
-				# If the ruby interpreter we run on offers a true/false argument to
-				# GC.enable, we disabled the GC and just run GC.enable(true) to make
-				# it run immediately if needed. Then, we re-disable it just after.
-				if gc_enable_has_argument && remaining_cycle_time > SLEEP_MIN_TIME
-					GC.enable(true)
-					GC.disable
-				end
-				add_timepoint(stats, :ruby_gc)
-				
-				# Sleep if there is enough time for it
-				if remaining_cycle_time > SLEEP_MIN_TIME
-					add_expected_duration(stats, :sleep, remaining_cycle_time)
-					sleep(remaining_cycle_time) 
-				end
-				add_timepoint(stats, :sleep)
-				
-				# Add some statistics and call cycle_end
-				if defined? Roby::Log
-					stats[:log_queue_size] = Roby::Log.logged_events.size
-				end
-				stats[:plan_task_count]  = plan.known_tasks.size
-				stats[:plan_event_count] = plan.free_events.size
-				cpu_time = Process.times
-				cpu_time = (cpu_time.utime + cpu_time.stime) * 1000
-				stats[:cpu_time] = cpu_time - last_cpu_time
-				last_cpu_time = cpu_time
-				
-				if ObjectSpace.respond_to?(:live_objects)
-					stats[:object_allocation] = ObjectSpace.allocated_objects - last_allocated_objects
-					stats[:live_objects] = ObjectSpace.live_objects
-					last_allocated_objects = ObjectSpace.allocated_objects
-				end
-				if ObjectSpace.respond_to?(:heap_slots)
-					stats[:heap_slots] = ObjectSpace.heap_slots
-				end
-				
-				stats[:start] = [cycle_start.tv_sec, cycle_start.tv_usec]
-				stats[:state] = Roby::State
-				Roby.synchronize do
-					cycle_end(stats)
-				end
-				stats = Hash.new
-				
-				@cycle_start += cycle_length
-				@cycle_index += 1
-				
-			rescue Exception => e
-				if !quitting?
-					quit
-				
-					ExecutionEngine.fatal "Execution thread quitting because of unhandled exception"
-					Roby.display_exception(ExecutionEngine.logger.io(:fatal), e)
-				elsif !e.kind_of?(Interrupt)
-					ExecutionEngine.fatal "Execution thread FORCEFULLY quitting because of unhandled exception"
-					Roby.display_exception(ExecutionEngine.logger.io(:fatal), e)
-					raise
-				end
-			end
+			event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
 	    end
-
+		
 	ensure
 		GC.enable if !already_disabled_gc
 		
@@ -2083,6 +1999,94 @@ module Roby
 			ExecutionEngine.warn "the following tasks are still present in the plan:"
 			plan.known_tasks.each do |t|
 				ExecutionEngine.warn "  #{t}"
+			end
+		end
+	end
+	
+	def event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
+		begin
+			if quitting?
+				thread.priority = 0
+				begin
+					return if forced_exit? || !clear
+				rescue Exception => e
+					ExecutionEngine.warn "Execution thread failed to clean up"
+					Roby.format_exception(e).each do |line|
+						ExecutionEngine.warn line
+					end
+					return
+				end
+			end
+			
+			while Time.now > cycle_start + cycle_length
+				@cycle_start += cycle_length
+				@cycle_index += 1
+			end
+			stats[:start] = cycle_start
+			stats[:cycle_index] = cycle_index
+			
+			Roby.synchronize do
+				process_events(stats) 
+			end
+			
+			@remaining_cycle_time = cycle_length - stats[:end]
+			
+			# If the ruby interpreter we run on offers a true/false argument to
+			# GC.enable, we disabled the GC and just run GC.enable(true) to make
+			# it run immediately if needed. Then, we re-disable it just after.
+			if gc_enable_has_argument && remaining_cycle_time > SLEEP_MIN_TIME
+				GC.enable(true)
+				GC.disable
+			end
+			add_timepoint(stats, :ruby_gc)
+			
+			# Sleep if there is enough time for it
+			if remaining_cycle_time > SLEEP_MIN_TIME
+				add_expected_duration(stats, :sleep, remaining_cycle_time)
+				sleep(remaining_cycle_time) 
+			end
+			add_timepoint(stats, :sleep)
+			
+			# Add some statistics and call cycle_end
+			if defined? Roby::Log
+				stats[:log_queue_size] = Roby::Log.logged_events.size
+			end
+			stats[:plan_task_count]  = plan.known_tasks.size
+			stats[:plan_event_count] = plan.free_events.size
+			cpu_time = Process.times
+			cpu_time = (cpu_time.utime + cpu_time.stime) * 1000
+			stats[:cpu_time] = cpu_time - last_cpu_time
+			last_cpu_time = cpu_time
+			
+			if ObjectSpace.respond_to?(:live_objects)
+				stats[:object_allocation] = ObjectSpace.allocated_objects - last_allocated_objects
+				stats[:live_objects] = ObjectSpace.live_objects
+				last_allocated_objects = ObjectSpace.allocated_objects
+			end
+			if ObjectSpace.respond_to?(:heap_slots)
+				stats[:heap_slots] = ObjectSpace.heap_slots
+			end
+			
+			stats[:start] = [cycle_start.tv_sec, cycle_start.tv_usec]
+			stats[:state] = Roby::State
+			Roby.synchronize do
+				cycle_end(stats)
+			end
+			stats = Hash.new
+			
+			@cycle_start += cycle_length
+			@cycle_index += 1
+			
+		rescue Exception => e
+			if !quitting?
+				quit
+			
+				ExecutionEngine.fatal "Execution thread quitting because of unhandled exception"
+				Roby.display_exception(ExecutionEngine.logger.io(:fatal), e)
+			elsif !e.kind_of?(Interrupt)
+				ExecutionEngine.fatal "Execution thread FORCEFULLY quitting because of unhandled exception"
+				Roby.display_exception(ExecutionEngine.logger.io(:fatal), e)
+				raise
 			end
 		end
 	end
