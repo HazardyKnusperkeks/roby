@@ -1988,9 +1988,10 @@ module Roby
 		if gc_enable_has_argument
 			already_disabled_gc = GC.disable
 		end
-		loop do
-			event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
-	    end
+#		loop do
+#			event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
+#	    end
+		FawkesZugriff::register_exec_engine(self, gc_enable_has_argument, stats, last_cpu_time)
 		
 	ensure
 		GC.enable if !already_disabled_gc
