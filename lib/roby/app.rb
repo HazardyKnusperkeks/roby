@@ -1555,7 +1555,7 @@ module Roby
 
       engine_config = self.engine
       engine = self.plan.engine
-      options = { :cycle => engine_config['cycle'] || 0.1 }
+      options = { :cycle => engine_config['cycle'] || 0.05 }
 
       engine.run options
       plugins = self.plugins.map { |_, mod| mod if (mod.respond_to?(:start) || mod.respond_to?(:run)) }.compact

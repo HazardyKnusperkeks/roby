@@ -1846,13 +1846,13 @@ module Roby
 	end
 
 	# Main event loop. Valid options are
-	# cycle::   the cycle duration in seconds (default: 0.1)
+	# cycle::   the cycle duration in seconds (default: 0.05)
 	def run(options = {})
 	    if running?
 		raise "there is already a control running in thread #{@thread}"
 	    end
 
-	    options = validate_options options, :cycle => 0.1
+	    options = validate_options options, :cycle => 0.05
 
 	    @quit = 0
             @allow_propagation = false
