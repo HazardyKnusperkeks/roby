@@ -198,7 +198,6 @@ module Roby
 
 	    @quit        = 0
             @allow_propagation = true
-	    @thread      = nil
 	    @cycle_index = 0
 	    @cycle_start = Time.now
 	    @cycle_length = 0
@@ -1848,45 +1847,38 @@ module Roby
 	# Main event loop. Valid options are
 	# cycle::   the cycle duration in seconds (default: 0.05)
 	def run(options = {})
-	    if running?
-		raise "there is already a control running in thread #{@thread}"
-	    end
-
-	    options = validate_options options, :cycle => 0.05
-
-	    @quit = 0
-            @allow_propagation = false
-
-            # Start the control thread and wait for @thread to be set
-            Roby.condition_variable(true) do |cv, mt|
-                mt.synchronize do
-                    @thread = Thread.new do
-                        @thread = Thread.current
-                        @thread.priority = THREAD_PRIORITY
-
-                        begin
-                            @cycle_length = options[:cycle]
-                            mt.synchronize { cv.signal }
-                            event_loop
-
-                        ensure
-                            Roby.synchronize do
-                                # reset the options only if we are in the control thread
-                                @thread = nil
-                                waiting_threads.each do |th|
-                                    th.raise ExecutionQuitError
-                                end
-                                finalizers.each { |blk| blk.call rescue nil }
-                                @quit = 0
-                                @allow_propagation = true
-                            end
-                        end
-                    end
-                    while !cycle_length
-                        cv.wait(mt)
-                    end
-                end
-            end
+		if running?
+			raise "there is already a control running in thread #{@thread}"
+		end
+		
+		options = validate_options options, :cycle => 0.05
+		
+		@quit = 0
+		@allow_propagation = false
+		
+		# Start the control thread and wait for @thread to be set
+		Roby.condition_variable(true) do |cv,mt|
+			mt.synchronize do
+				puts "Run 1"
+				@thread = Thread.new do
+					@thread = Thread.current
+					@thread.priority = THREAD_PRIORITY
+					
+					begin
+						@cycle_length = options[:cycle]
+						mt.synchronize { cv.signal }
+						FawkesZugriff::register_exec_engine(self)
+						event_loop_init
+					end
+				end
+				puts "Run 2"
+				while !cycle_length
+					cv.wait(mt)
+				end
+			end
+			puts "Run 3"
+		end
+		puts "Run 4"
 	end
 
 	attr_reader :last_stop_count # :nodoc:
@@ -1961,10 +1953,7 @@ module Roby
         # If set to true, Roby will warn if the GC cannot be controlled by Roby
         attr_predicate :gc_warning?, true
 
-	# The main event loop. It returns when the execution engine is asked to
-	# quit. In general, this does not need to be called direclty: use #run
-	# to start the event loop in a separate thread.
-	def event_loop
+	def event_loop_init
 		@last_stop_count = 0
 		@cycle_start  = Time.now
 		@cycle_index  = 0
@@ -1976,17 +1965,31 @@ module Roby
 		last_cpu_time = Process.times
 		last_cpu_time = (last_cpu_time.utime + last_cpu_time.stime) * 1000
 
-#		loop do
-#			event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
-#	    end
-		
-		FawkesZugriff::register_exec_engine(self, stats, last_cpu_time)
-	ensure
+		FawkesZugriff::register_variables(stats, last_cpu_time)
+		@loop_mutex = Mutex.new
+		@loop_wait = ConditionVariable.new
+		@loop_mutex.synchronize do
+			puts "Event Loop Init Sleep"
+			@loop_wait.wait(@loop_mutex)
+		end
+	end
+	
+	def event_loop_finalize
+		@loop_wait.signal
 	    if !plan.known_tasks.empty?
 			ExecutionEngine.warn "the following tasks are still present in the plan:"
 			plan.known_tasks.each do |t|
 				ExecutionEngine.warn "  #{t}"
 			end
+		end
+		Roby.synchronize do
+			@thread = nil
+			waiting_threads.each do |th|
+				th.raise ExecutionQuitError
+			end
+			finalizers.each { |blk| blk.call rescue nil }
+			@quit = 0
+			@allow_propagation = true
 		end
 	end
 	
