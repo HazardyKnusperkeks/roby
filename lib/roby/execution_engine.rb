@@ -1969,14 +1969,6 @@ module Roby
 		@cycle_start  = Time.now
 		@cycle_index  = 0
 		
-		gc_enable_has_argument = begin
-			GC.enable(true)
-			true
-		rescue
-			Application.info "GC.enable does not accept an argument. GC will not be controlled by Roby"
-			false
-		end
-		
 		stats = Hash.new
 		if ObjectSpace.respond_to?(:live_objects)
 			last_allocated_objects = ObjectSpace.allocated_objects
@@ -1984,18 +1976,12 @@ module Roby
 		last_cpu_time = Process.times
 		last_cpu_time = (last_cpu_time.utime + last_cpu_time.stime) * 1000
 
-		GC.start
-		if gc_enable_has_argument
-			already_disabled_gc = GC.disable
-		end
 #		loop do
 #			event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
 #	    end
-		FawkesZugriff::register_exec_engine(self, gc_enable_has_argument, stats, last_cpu_time)
 		
+		FawkesZugriff::register_exec_engine(self, stats, last_cpu_time)
 	ensure
-		GC.enable if !already_disabled_gc
-		
 	    if !plan.known_tasks.empty?
 			ExecutionEngine.warn "the following tasks are still present in the plan:"
 			plan.known_tasks.each do |t|
@@ -2004,7 +1990,7 @@ module Roby
 		end
 	end
 	
-	def event_loop_step(gc_enable_has_argument, stats, last_cpu_time)
+	def event_loop_step(stats, last_cpu_time)
 		begin
 			if quitting?
 				thread.priority = 0
@@ -2032,12 +2018,9 @@ module Roby
 			
 			@remaining_cycle_time = cycle_length - stats[:end]
 			
-			# If the ruby interpreter we run on offers a true/false argument to
-			# GC.enable, we disabled the GC and just run GC.enable(true) to make
-			# it run immediately if needed. Then, we re-disable it just after.
-			if gc_enable_has_argument && remaining_cycle_time > SLEEP_MIN_TIME
-				GC.enable(true)
-				GC.disable
+			# The GC is disabled and should be, we run it manually
+			if remaining_cycle_time > SLEEP_MIN_TIME
+				GC.start
 			end
 			add_timepoint(stats, :ruby_gc)
 			
