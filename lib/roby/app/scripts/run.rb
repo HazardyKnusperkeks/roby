@@ -1,4 +1,3 @@
-require 'rubygems'
 require 'roby'
 require 'optparse'
 
@@ -31,7 +30,7 @@ Roby.app.additional_model_files.concat(direct_files)
 
 Roby.display_exception do
 	app.setup
-	Roby.engine.once do
+	#Roby.engine.once do
 		Robot.info "loaded Roby on #{RUBY_DESCRIPTION}"
 		
 		# Start the requested actions
@@ -62,7 +61,7 @@ Roby.display_exception do
 			end
 		end
 		Robot.info "done initialization"
-	end
+	#end
 	app.run
 	FawkesZugriff::roby_is_ready
 end

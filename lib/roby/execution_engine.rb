@@ -1801,6 +1801,7 @@ module Roby
 
         # The execution thread if there is one running
 	attr_accessor :thread
+	attr_accessor :runs
         # True if an execution thread is running
 	def running?; !!@runs end
 
@@ -1847,6 +1848,7 @@ module Roby
 	# Main event loop. Valid options are
 	# cycle::   the cycle duration in seconds (default: 0.05)
 	def run(options = {})
+		puts "Exec Engine Run"
 		if running?
 			raise "there is already a control running"
 		end
@@ -1855,31 +1857,11 @@ module Roby
 		
 		@quit = 0
 		@allow_propagation = false
+		@runs = true
+		@cycle_length = options[:cycle]
 		
-		# Start the control thread and wait for @thread to be set
-		#Roby.condition_variable(true) do |cv,mt|
-			#mt.synchronize do
-				puts "Run 1"
-				@runs = true
-				#@thread = Thread.new do
-					#@thread = Thread.current
-					#@thread.priority = THREAD_PRIORITY
-					
-					begin
-						@cycle_length = options[:cycle]
-						#mt.synchronize { cv.signal }
-						FawkesZugriff::register_exec_engine(self)
-						event_loop_init
-					end
-				#end
-				puts "Run 2"
-				#while !cycle_length
-					#cv.wait(mt)
-				#end
-			#end
-			puts "Run 3"
-		#end
-		puts "Run 4"
+		FawkesZugriff::register_exec_engine(self)
+		event_loop_init
 	end
 
 	attr_reader :last_stop_count # :nodoc:
