@@ -1802,7 +1802,7 @@ module Roby
         # The execution thread if there is one running
 	attr_accessor :thread
         # True if an execution thread is running
-	def running?; !!@thread end
+	def running?; !!@runs end
 
 	# The cycle length in seconds
 	attr_reader :cycle_length
@@ -1848,7 +1848,7 @@ module Roby
 	# cycle::   the cycle duration in seconds (default: 0.05)
 	def run(options = {})
 		if running?
-			raise "there is already a control running in thread #{@thread}"
+			raise "there is already a control running"
 		end
 		
 		options = validate_options options, :cycle => 0.05
@@ -1857,27 +1857,28 @@ module Roby
 		@allow_propagation = false
 		
 		# Start the control thread and wait for @thread to be set
-		Roby.condition_variable(true) do |cv,mt|
-			mt.synchronize do
+		#Roby.condition_variable(true) do |cv,mt|
+			#mt.synchronize do
 				puts "Run 1"
-				@thread = Thread.new do
-					@thread = Thread.current
-					@thread.priority = THREAD_PRIORITY
+				@runs = true
+				#@thread = Thread.new do
+					#@thread = Thread.current
+					#@thread.priority = THREAD_PRIORITY
 					
 					begin
 						@cycle_length = options[:cycle]
-						mt.synchronize { cv.signal }
+						#mt.synchronize { cv.signal }
 						FawkesZugriff::register_exec_engine(self)
 						event_loop_init
 					end
-				end
+				#end
 				puts "Run 2"
-				while !cycle_length
-					cv.wait(mt)
-				end
-			end
+				#while !cycle_length
+					#cv.wait(mt)
+				#end
+			#end
 			puts "Run 3"
-		end
+		#end
 		puts "Run 4"
 	end
 
@@ -1958,20 +1959,12 @@ module Roby
 		@cycle_start  = Time.now
 		@cycle_index  = 0
 		
-		stats = Hash.new
+		@stats = Hash.new
 		if ObjectSpace.respond_to?(:live_objects)
-			last_allocated_objects = ObjectSpace.allocated_objects
+			@last_allocated_objects = ObjectSpace.allocated_objects
 		end
-		last_cpu_time = Process.times
-		last_cpu_time = (last_cpu_time.utime + last_cpu_time.stime) * 1000
-
-		FawkesZugriff::register_variables(stats, last_cpu_time)
-		@loop_mutex = Mutex.new
-		@loop_wait = ConditionVariable.new
-		@loop_mutex.synchronize do
-			puts "Event Loop Init Sleep"
-			@loop_wait.wait(@loop_mutex)
-		end
+		@last_cpu_time = Process.times
+		@last_cpu_time = (@last_cpu_time.utime + @last_cpu_time.stime) * 1000
 	end
 	
 	def event_loop_finalize
@@ -1983,7 +1976,8 @@ module Roby
 			end
 		end
 		Roby.synchronize do
-			@thread = nil
+			#@thread = nil
+			@runs = false
 			waiting_threads.each do |th|
 				th.raise ExecutionQuitError
 			end
@@ -1993,10 +1987,9 @@ module Roby
 		end
 	end
 	
-	def event_loop_step(stats, last_cpu_time)
+	def event_loop_step
 		begin
 			if quitting?
-				thread.priority = 0
 				begin
 					return if forced_exit? || !clear
 				rescue Exception => e
@@ -2012,54 +2005,54 @@ module Roby
 				@cycle_start += cycle_length
 				@cycle_index += 1
 			end
-			stats[:start] = cycle_start
-			stats[:cycle_index] = cycle_index
+			@stats[:start] = cycle_start
+			@stats[:cycle_index] = cycle_index
 			
 			Roby.synchronize do
-				process_events(stats) 
+				process_events(@stats) 
 			end
 			
-			@remaining_cycle_time = cycle_length - stats[:end]
+			@remaining_cycle_time = cycle_length - @stats[:end]
 			
 			# The GC is disabled and should be, we run it manually
 			if remaining_cycle_time > SLEEP_MIN_TIME
 				GC.start
 			end
-			add_timepoint(stats, :ruby_gc)
+			add_timepoint(@stats, :ruby_gc)
 			
 			# Sleep if there is enough time for it
 			if remaining_cycle_time > SLEEP_MIN_TIME
-				add_expected_duration(stats, :sleep, remaining_cycle_time)
+				add_expected_duration(@stats, :sleep, remaining_cycle_time)
 				sleep(remaining_cycle_time) 
 			end
-			add_timepoint(stats, :sleep)
+			add_timepoint(@stats, :sleep)
 			
 			# Add some statistics and call cycle_end
 			if defined? Roby::Log
-				stats[:log_queue_size] = Roby::Log.logged_events.size
+				@stats[:log_queue_size] = Roby::Log.logged_events.size
 			end
-			stats[:plan_task_count]  = plan.known_tasks.size
-			stats[:plan_event_count] = plan.free_events.size
+			@stats[:plan_task_count]  = plan.known_tasks.size
+			@stats[:plan_event_count] = plan.free_events.size
 			cpu_time = Process.times
 			cpu_time = (cpu_time.utime + cpu_time.stime) * 1000
-			stats[:cpu_time] = cpu_time - last_cpu_time
-			last_cpu_time = cpu_time
+			@stats[:cpu_time] = cpu_time - @last_cpu_time
+			@last_cpu_time = cpu_time
 			
 			if ObjectSpace.respond_to?(:live_objects)
-				stats[:object_allocation] = ObjectSpace.allocated_objects - last_allocated_objects
-				stats[:live_objects] = ObjectSpace.live_objects
+				@stats[:object_allocation] = ObjectSpace.allocated_objects - @last_allocated_objects
+				@stats[:live_objects] = ObjectSpace.live_objects
 				last_allocated_objects = ObjectSpace.allocated_objects
 			end
 			if ObjectSpace.respond_to?(:heap_slots)
-				stats[:heap_slots] = ObjectSpace.heap_slots
+				@stats[:heap_slots] = ObjectSpace.heap_slots
 			end
 			
-			stats[:start] = [cycle_start.tv_sec, cycle_start.tv_usec]
-			stats[:state] = Roby::State
+			@stats[:start] = [cycle_start.tv_sec, cycle_start.tv_usec]
+			@stats[:state] = Roby::State
 			Roby.synchronize do
-				cycle_end(stats)
+				cycle_end(@stats)
 			end
-			stats = Hash.new
+			@stats = Hash.new
 			
 			@cycle_start += cycle_length
 			@cycle_index += 1
