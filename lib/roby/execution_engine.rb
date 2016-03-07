@@ -2000,13 +2000,6 @@ module Roby
 			end
 			add_timepoint(@stats, :ruby_gc)
 			
-			# Sleep if there is enough time for it
-			if remaining_cycle_time > SLEEP_MIN_TIME
-				add_expected_duration(@stats, :sleep, remaining_cycle_time)
-				sleep(remaining_cycle_time) 
-			end
-			add_timepoint(@stats, :sleep)
-			
 			# Add some statistics and call cycle_end
 			if defined? Roby::Log
 				@stats[:log_queue_size] = Roby::Log.logged_events.size
