@@ -1848,7 +1848,6 @@ module Roby
 	# Main event loop. Valid options are
 	# cycle::   the cycle duration in seconds (default: 0.05)
 	def run(options = {})
-		puts "Exec Engine Run"
 		if running?
 			raise "there is already a control running"
 		end
@@ -1860,7 +1859,6 @@ module Roby
 		@runs = true
 		@cycle_length = options[:cycle]
 		
-		FawkesZugriff::register_exec_engine(self)
 		event_loop_init
 	end
 

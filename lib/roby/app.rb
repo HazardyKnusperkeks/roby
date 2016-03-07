@@ -1550,23 +1550,19 @@ module Roby
       call_plugins(:prepare, self)
     end
 
-    def run(&block)
-      prepare
-
-      engine_config = self.engine
-      engine = self.plan.engine
-      options = { :cycle => engine_config['cycle'] || 0.05 }
-
-      engine.run options
-      plugins = self.plugins.map { |_, mod| mod if (mod.respond_to?(:start) || mod.respond_to?(:run)) }.compact
-      run_plugins(plugins, &block)
-
-    ensure
-      cleanup
-      if restarting?
-        Kernel.exec *@restart_cmdline
-      end
-    end
+	def run(&block)
+		prepare
+		
+		engine_config = self.engine
+		engine = self.plan.engine
+		options = { :cycle => engine_config['cycle'] || 0.05 }
+		
+		FawkesZugriff::register_exec_engine(engine, self)
+		
+		engine.run options
+		plugins = self.plugins.map { |_, mod| mod if (mod.respond_to?(:start) || mod.respond_to?(:run)) }.compact
+		run_plugins(plugins, &block)
+	end
 
     # Whether {#run} should exec a new process on quit or not
     def restarting?
