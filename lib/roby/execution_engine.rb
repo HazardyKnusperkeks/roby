@@ -1948,7 +1948,6 @@ module Roby
 	end
 	
 	def event_loop_finalize
-		@loop_wait.signal
 	    if !plan.known_tasks.empty?
 			ExecutionEngine.warn "the following tasks are still present in the plan:"
 			plan.known_tasks.each do |t|
