@@ -1551,6 +1551,7 @@ module Roby
     end
 
 	def run(&block)
+		self.public_logs = false
 		prepare
 		
 		engine_config = self.engine
