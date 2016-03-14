@@ -6,6 +6,9 @@ module Robot
         Roby.logger.formatter.call(severity, time, progname, msg)
     end
     extend Logger::Root('Robot', Logger::INFO, &method(:log_formatter))
+	def logger.info(s)
+		FawkesZugriff::log_info(s)
+	end
 
     # @deprecated use Roby.app.action_from_model instead
     def self.action_from_model(model)
