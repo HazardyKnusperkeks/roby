@@ -92,9 +92,6 @@ module Roby
     end
 
     extend Logger::Root('Roby', Logger::WARN) { |severity, time, progname, msg| "#{Roby.format_time(time)} (#{progname}) #{msg}\n" }
-	def logger.warn(s)
-		FawkesZugriff::log_warn(s)
-	end
 
     class Pool < Queue
 	def initialize(klass)
