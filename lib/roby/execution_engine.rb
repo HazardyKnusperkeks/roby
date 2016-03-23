@@ -589,7 +589,6 @@ module Roby
             raise InternalError, "nested call to #gather_propagation" if gathering?
 
             old_allow_propagation, @allow_propagation = @allow_propagation, true
-			RBA.execRubyCalls
 
             # The ensure clause must NOT apply to the recursive check above.
             # Otherwise, we end up resetting @propagation_exceptions to nil,
